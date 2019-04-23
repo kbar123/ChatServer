@@ -116,10 +116,11 @@ public class ChatServer {
                         os.println("The name should not contain '@' character.");
                     }
                 }
+                name= name.split("&")[1].split("=")[1];
 
                 /* Welcome the new the client. */
                 os.println("Welcome " + name
-                        + " to our chat room.\nTo leave enter /quit in a new line.");
+                        + " to our chat room. To leave enter /quit in a new line.");
                 synchronized (this) {
                     for (int i = 0; i < maxClientsCount; i++) {
                         if (threads[i] != null && threads[i] == this) {
