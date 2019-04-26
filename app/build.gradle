@@ -1,13 +1,12 @@
-apply plugin: 'com.android.application'
+apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 28
     defaultConfig {
-        applicationId "com.applicationsbar.chatserver"
+
         minSdkVersion 15
         targetSdkVersion 28
-        versionCode 1
-        versionName "1.0"
+
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -25,3 +24,16 @@ dependencies {
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
 }
+
+task deleteJar(type: Delete) {
+    delete 'release/chatserver.jar'
+}
+
+task createJar(type: Copy) {
+    from('build/intermediates/packaged-classes/release/')
+    into('release/')
+    include('classes.jar')
+    rename('classes.jar', 'chatserver.jar')
+}
+
+createJar.dependsOn(deleteJar, build)
