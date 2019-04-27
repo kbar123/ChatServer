@@ -87,12 +87,12 @@ class clientThread extends Thread {
     private String clientName = null;
     private DataInputStream is = null;
     private PrintStream os = null;
-    private Socket clientSocket = null;
+    private Socket tclientSocket = null;
     private final clientThread[] threads;
     private int maxClientsCount;
 
     public clientThread(Socket clientSocket, clientThread[] threads) {
-        this.clientSocket = clientSocket;
+        this.tclientSocket = clientSocket;
         this.threads = threads;
         maxClientsCount = threads.length;
     }
@@ -105,126 +105,134 @@ class clientThread extends Thread {
             /*
              * Create input and output streams for this client.
              */
-            is = new DataInputStream(clientSocket.getInputStream());
-            os = new PrintStream(clientSocket.getOutputStream());
-            String name;
-            while (true) {
-                //os.println("Enter your name.");
-                name = is.readLine().trim();
-                if (name.indexOf('@') == -1) {
-                    break;
-                } else {
-                    os.println("The name should not contain '@' character.");
-                }
-            }
-            name = name.split("&")[1].split("=")[1];
+            is = new DataInputStream(tclientSocket.getInputStream());
+            os = new PrintStream(tclientSocket.getOutputStream());
+            String loginString = is.readLine().trim();
 
-            /* Welcome the new the client. */
-            sendStringMessage(os, "Welcome " + name
-                    + " to our chat room.");
-            synchronized (this) {
-                for (int i = 0; i < maxClientsCount; i++) {
-                    if (threads[i] != null && threads[i] == this) {
-                        clientName = "@" + name;
-                        break;
+            String username= loginString.split("&")[1].split("=")[1];
+            String password=loginString.split("&")[0].split("=")[1];
+            User u=User.getUser(username,password);
+
+            if (u!=null) {
+                String name=u.firstName+" "+u.lastName;
+                /* Welcome the new the client. */
+                sendStringMessage(os, "Welcome " + name
+                        + " to our chat room.");
+                synchronized (this) {
+                    for (int i = 0; i < maxClientsCount; i++) {
+                        if (threads[i] != null && threads[i] == this) {
+                            clientName = "@" + name;
+                            break;
+                        }
+                    }
+                    for (int i = 0; i < maxClientsCount; i++) {
+                        if (threads[i] != null && threads[i] != this) {
+                            threads[i].os.println("*** A new user " + name
+                                    + " entered the chat room !!! ***");
+                        }
                     }
                 }
-                for (int i = 0; i < maxClientsCount; i++) {
-                    if (threads[i] != null && threads[i] != this) {
-                        threads[i].os.println("*** A new user " + name
-                                + " entered the chat room !!! ***");
-                    }
-                }
-            }
-            /* Start the conversation. */
-            while (true) {
+                /* Start the conversation. */
+                while (true) {
 
 
-                int messageType = is.read();
-                if (messageType==-1)
-                    break;
-                int messageLength = 0;
-                for (int i = 0; i < 4; i++) {
-                    int j = is.read();
-                    messageLength = messageLength * 256 + j;
-                }
-                byte[] message = new byte[messageLength];
-                for (int i = 0; i < messageLength; i++) {
-                    message[i] = (byte) is.read();
-                }
-
-                if (messageType == 1) {
-                    String line = new String(message);
-                    if (line.indexOf("*** Bye") != -1)
+                    int messageType = is.read();
+                    if (messageType == -1)
                         break;
-                    if (line.startsWith("/quit")) {
-                        break;
+                    int messageLength = 0;
+                    for (int i = 0; i < 4; i++) {
+                        int j = is.read();
+                        messageLength = messageLength * 256 + j;
                     }
-                    /* If the message is private sent it to the given client. */
-                    if (line.startsWith("@")) {
-                        String[] words = line.split("\\s", 2);
-                        if (words.length > 1 && words[1] != null) {
-                            words[1] = words[1].trim();
-                            if (!words[1].isEmpty()) {
-                                synchronized (this) {
-                                    for (int i = 0; i < maxClientsCount; i++) {
-                                        if (threads[i] != null && threads[i] != this
-                                                && threads[i].clientName != null
-                                                && threads[i].clientName.equals(words[0])) {
+                    byte[] message = new byte[messageLength];
+                    for (int i = 0; i < messageLength; i++) {
+                        message[i] = (byte) is.read();
+                    }
 
-                                            //threads[i].os.println("<" + name + "> " + words[1]);
-                                            sendStringMessage(threads[i].os, ">" + name + "> " + words[1]);
-                                            /*
-                                             * Echo this message to let the client know the private
-                                             * message was sent.
-                                             */
-                                            sendStringMessage(os, ">" + name + "> " + words[1]);
-                                            //this.os.println(">" + name + "> " + words[1]);
-                                            break;
+                    if (messageType == 1) {
+                        String line = new String(message);
+                        if (line.indexOf("*** Bye") != -1)
+                            break;
+                        if (line.startsWith("/quit")) {
+                            break;
+                        }
+                        /* If the message is private sent it to the given client. */
+                        if (line.startsWith("@")) {
+                            String[] words = line.split("\\s", 2);
+                            if (words.length > 1 && words[1] != null) {
+                                words[1] = words[1].trim();
+                                if (!words[1].isEmpty()) {
+                                    synchronized (this) {
+                                        for (int i = 0; i < maxClientsCount; i++) {
+                                            if (threads[i] != null && threads[i] != this
+                                                    && threads[i].clientName != null
+                                                    && threads[i].clientName.equals(words[0])) {
+
+                                                //threads[i].os.println("<" + name + "> " + words[1]);
+                                                sendStringMessage(threads[i].os, ">" + name + "> " + words[1]);
+                                                /*
+                                                 * Echo this message to let the client know the private
+                                                 * message was sent.
+                                                 */
+                                                sendStringMessage(os, ">" + name + "> " + words[1]);
+                                                //this.os.println(">" + name + "> " + words[1]);
+                                                break;
+                                            }
                                         }
+                                    }
+                                }
+                            }
+                        } else {
+                            /* The message is public, broadcast it to all other clients. */
+                            synchronized (this) {
+                                for (int i = 0; i < maxClientsCount; i++) {
+                                    if (threads[i] != null && threads[i].clientName != null) {
+                                        sendStringMessage(threads[i].os, ">" + name + "> " + line);
+
+                                        // threads[i].os.println("<" + name + "> " + line);
                                     }
                                 }
                             }
                         }
                     } else {
-                        /* The message is public, broadcast it to all other clients. */
                         synchronized (this) {
                             for (int i = 0; i < maxClientsCount; i++) {
                                 if (threads[i] != null && threads[i].clientName != null) {
-                                    sendStringMessage(threads[i].os, ">" + name + "> " + line);
+                                    sendByteArrayMessage(threads[i].os, message);
 
-                                    // threads[i].os.println("<" + name + "> " + line);
                                 }
                             }
                         }
                     }
-                } else {
-                    synchronized (this) {
-                        for (int i = 0; i < maxClientsCount; i++) {
-                            if (threads[i] != null && threads[i].clientName != null) {
-                                sendByteArrayMessage(threads[i].os, message);
 
-                            }
+                }
+                synchronized (this) {
+                    for (int i = 0; i < maxClientsCount; i++) {
+                        if (threads[i] != null && threads[i] != this
+                                && threads[i].clientName != null) {
+                            threads[i].os.println("*** The user " + name
+                                    + " is leaving the chat room !!! ***");
                         }
                     }
                 }
+                //  os.println("*** Bye " + name + " ***");
 
+                /*
+                 * Clean up. Set the current thread variable to null so that a new client
+                 * could be accepted by the server.
+                 */
             }
-            synchronized (this) {
-                for (int i = 0; i < maxClientsCount; i++) {
-                    if (threads[i] != null && threads[i] != this
-                            && threads[i].clientName != null) {
-                        threads[i].os.println("*** The user " + name
-                                + " is leaving the chat room !!! ***");
-                    }
-                }
+            else {
+                sendLoginFaileMessage(this.os,"Login failed");
             }
-          //  os.println("*** Bye " + name + " ***");
 
             /*
-             * Clean up. Set the current thread variable to null so that a new client
-             * could be accepted by the server.
+             * Close the output stream, close the input stream, close the socket.
              */
+            this.is.close();
+            this.os.close();
+            this.tclientSocket.close();
+            System.out.println("Socket Closed"+this.tclientSocket.isClosed());
             synchronized (this) {
                 for (int i = 0; i < maxClientsCount; i++) {
                     if (threads[i] == this) {
@@ -232,13 +240,15 @@ class clientThread extends Thread {
                     }
                 }
             }
-            /*
-             * Close the output stream, close the input stream, close the socket.
-             */
-            is.close();
-            os.close();
-            clientSocket.close();
-        } catch (IOException e) {
+        } catch (Exception e) {
+            try {
+                if (is!=null) is.close();
+                if (os!=null) os.close();
+                if (tclientSocket!=null) tclientSocket.close();
+            } catch (IOException e1) {
+                e1.printStackTrace();
+            }
+
         }
     }
 
@@ -269,6 +279,26 @@ class clientThread extends Thread {
         try {
 
             byte currentByte = 1;
+            os.write(currentByte);
+            int len = ba.length;
+
+            for (int i = 3; i >= 0; i--) {
+                currentByte = (byte) ((len >> (i * 8)) % 256);
+                os.write(currentByte);
+            }
+
+            os.write(ba);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendLoginFaileMessage(PrintStream os, String s) {
+
+        byte[] ba = s.getBytes();
+        try {
+
+            byte currentByte = 3;
             os.write(currentByte);
             int len = ba.length;
 
