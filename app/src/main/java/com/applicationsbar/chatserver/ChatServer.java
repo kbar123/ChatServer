@@ -6,6 +6,10 @@ import java.io.IOException;
 import java.net.Socket;
 import java.net.ServerSocket;
 
+import static com.applicationsbar.chatserver.ChatServer.sendByteArrayMessage;
+import static com.applicationsbar.chatserver.ChatServer.sendLoginFailedMessage;
+import static com.applicationsbar.chatserver.ChatServer.sendStringMessage;
+
 public class ChatServer {
 
 
@@ -19,21 +23,80 @@ public class ChatServer {
     // The server socket.
     private static ServerSocket serverSocket = null;
     // The client socket.
-    private static Socket clientSocket = null;
+
 
     // This chat server can accept up to maxClientsCount clients' connections.
     private static final int maxClientsCount = 10;
     private static final clientThread[] threads = new clientThread[maxClientsCount];
 
-    public static void main(String args[]) {
+    static void sendByteArrayMessage(PrintStream os, byte[] ba) {
 
+
+        try {
+
+            byte currentByte = 2;
+            os.write(currentByte);
+            int len = ba.length;
+
+            for (int i = 3; i >= 0; i--) {
+                currentByte = (byte) ((len >> (i * 8)) % 256);
+                os.write(currentByte);
+            }
+
+            os.write(ba);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static void sendStringMessage(PrintStream os, String s) {
+
+        byte[] ba = s.getBytes();
+        try {
+
+            byte currentByte = 1;
+            os.write(currentByte);
+            int len = ba.length;
+
+            for (int i = 3; i >= 0; i--) {
+                currentByte = (byte) ((len >> (i * 8)) % 256);
+                os.write(currentByte);
+            }
+
+            os.write(ba);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    static void sendLoginFailedMessage(PrintStream os, String s) {
+
+        byte[] ba = s.getBytes();
+        try {
+
+            byte currentByte = 3;
+            os.write(currentByte);
+            int len = ba.length;
+
+            for (int i = 3; i >= 0; i--) {
+                currentByte = (byte) ((len >> (i * 8)) % 256);
+                os.write(currentByte);
+            }
+
+            os.write(ba);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        Socket clientSocket;
         // The default port number.
         int portNumber = 2222;
         if (args.length < 1) {
             System.out.println("Usage: java MultiThreadChatServerSync <portNumber>\n"
                     + "Now using port number=" + portNumber);
         } else {
-            portNumber = Integer.valueOf(args[0]).intValue();
+            portNumber = Integer.valueOf(args[0]);
         }
 
         /*
@@ -43,7 +106,7 @@ public class ChatServer {
         try {
             serverSocket = new ServerSocket(portNumber);
         } catch (IOException e) {
-            System.out.println(e);
+           e.printStackTrace();
         }
 
         /*
@@ -53,7 +116,7 @@ public class ChatServer {
         while (true) {
             try {
                 clientSocket = serverSocket.accept();
-                int i = 0;
+                int i;
                 for (i = 0; i < maxClientsCount; i++) {
                     if (threads[i] == null) {
                         (threads[i] = new clientThread(clientSocket, threads)).start();
@@ -62,12 +125,13 @@ public class ChatServer {
                 }
                 if (i == maxClientsCount) {
                     PrintStream os = new PrintStream(clientSocket.getOutputStream());
+                    sendLoginFailedMessage(os,"Server too busy. Try later.");
                     os.println("Server too busy. Try later.");
                     os.close();
                     clientSocket.close();
                 }
             } catch (IOException e) {
-                System.out.println(e);
+                e.printStackTrace();
             }
         }
     }
@@ -87,12 +151,12 @@ class clientThread extends Thread {
     private String clientName = null;
     private DataInputStream is = null;
     private PrintStream os = null;
-    private Socket tclientSocket = null;
+    private Socket tClientSocket;
     private final clientThread[] threads;
     private int maxClientsCount;
 
-    public clientThread(Socket clientSocket, clientThread[] threads) {
-        this.tclientSocket = clientSocket;
+    clientThread(Socket clientSocket, clientThread[] threads) {
+        this.tClientSocket = clientSocket;
         this.threads = threads;
         maxClientsCount = threads.length;
     }
@@ -105,8 +169,8 @@ class clientThread extends Thread {
             /*
              * Create input and output streams for this client.
              */
-            is = new DataInputStream(tclientSocket.getInputStream());
-            os = new PrintStream(tclientSocket.getOutputStream());
+            is = new DataInputStream(tClientSocket.getInputStream());
+            os = new PrintStream(tClientSocket.getOutputStream());
             String loginString = is.readLine().trim();
 
             String username= loginString.split("&")[1].split("=")[1];
@@ -116,8 +180,7 @@ class clientThread extends Thread {
             if (u!=null) {
                 String name=u.firstName+" "+u.lastName;
                 /* Welcome the new the client. */
-                sendStringMessage(os, "Welcome " + name
-                        + " to our chat room.");
+                sendStringMessage(os, "Welcome " + name + " to our chat room.");
                 synchronized (this) {
                     for (int i = 0; i < maxClientsCount; i++) {
                         if (threads[i] != null && threads[i] == this) {
@@ -151,7 +214,7 @@ class clientThread extends Thread {
 
                     if (messageType == 1) {
                         String line = new String(message);
-                        if (line.indexOf("*** Bye") != -1)
+                        if (line.contains("*** Bye"))
                             break;
                         if (line.startsWith("/quit")) {
                             break;
@@ -223,7 +286,7 @@ class clientThread extends Thread {
                  */
             }
             else {
-                sendLoginFaileMessage(this.os,"Login failed");
+                sendLoginFailedMessage(this.os,"Login failed");
             }
 
             /*
@@ -231,8 +294,8 @@ class clientThread extends Thread {
              */
             this.is.close();
             this.os.close();
-            this.tclientSocket.close();
-            System.out.println("Socket Closed"+this.tclientSocket.isClosed());
+            this.tClientSocket.close();
+            System.out.println("Socket Closed"+this.tClientSocket.isClosed());
             synchronized (this) {
                 for (int i = 0; i < maxClientsCount; i++) {
                     if (threads[i] == this) {
@@ -244,7 +307,7 @@ class clientThread extends Thread {
             try {
                 if (is!=null) is.close();
                 if (os!=null) os.close();
-                if (tclientSocket!=null) tclientSocket.close();
+                if (tClientSocket!=null) tClientSocket.close();
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
@@ -253,65 +316,9 @@ class clientThread extends Thread {
     }
 
 
-    private void sendByteArrayMessage(PrintStream os, byte[] ba) {
+   
 
-
-        try {
-
-            byte currentByte = 2;
-            os.write(currentByte);
-            int len = ba.length;
-
-            for (int i = 3; i >= 0; i--) {
-                currentByte = (byte) ((len >> (i * 8)) % 256);
-                os.write(currentByte);
-            }
-
-            os.write(ba);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void sendStringMessage(PrintStream os, String s) {
-
-        byte[] ba = s.getBytes();
-        try {
-
-            byte currentByte = 1;
-            os.write(currentByte);
-            int len = ba.length;
-
-            for (int i = 3; i >= 0; i--) {
-                currentByte = (byte) ((len >> (i * 8)) % 256);
-                os.write(currentByte);
-            }
-
-            os.write(ba);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void sendLoginFaileMessage(PrintStream os, String s) {
-
-        byte[] ba = s.getBytes();
-        try {
-
-            byte currentByte = 3;
-            os.write(currentByte);
-            int len = ba.length;
-
-            for (int i = 3; i >= 0; i--) {
-                currentByte = (byte) ((len >> (i * 8)) % 256);
-                os.write(currentByte);
-            }
-
-            os.write(ba);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
+    
 }
 
 
